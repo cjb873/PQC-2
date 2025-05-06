@@ -2,7 +2,7 @@ import numpy as np
 from sage.coding.goppa_code import GoppaCode
 from sage.rings.finite_rings.finite_field_constructor import GF
 from sage.rings.integer import Integer
-
+from sage.all import vector
 
 np.random.seed(1)
 
@@ -39,11 +39,12 @@ class Bob:
         g = np.random.randint(0, 2, 1)[0]*x**Integer(self.t)
         for i in range(self.t):
             g += np.random.randint(0, 2, 1)[0]*x**Integer(i)
+        print(f"\n\ng(z): {g}")
 
         L = [a for a in F.list() if g(a) != Integer(0)]
         self.C = GoppaCode(g, L)
         G = self.C.generator_matrix().numpy().astype('int')
-
+        print(f"G: {G}")
         return g, G
 
     def gen_S(self):
@@ -79,8 +80,10 @@ class Bob:
 
     def decrypt(self, y):
         y_prime = np.matmul(y, np.linalg.inv(self.P))
-        m_prime = self.C.decode_to_message(y_prime)
-        return m_prime  # * np.linalg.inv(self.S)
+        vec = vector(y_prime.astype('int'))
+        m_prime = self.C.decode_to_code(vec)
+        np_m_prime = m_prime.numpy()[:self.S.shape[0]]
+        return np.matmul(np_m_prime, np.linalg.inv(self.S)).astype('int')
 
 
 class Alice:
@@ -95,11 +98,35 @@ class Alice:
         self.unencrypted_m = self.gen_message(G_prime.shape[0])
 
         e = self.generate_e(G_prime.shape[1], t)
-        return np.matmul(self.unencrypted_m, G_prime) + e
+        mat_prod = np.matmul(self.unencrypted_m, G_prime)
+        return (mat_prod + e).astype('int')
 
     def generate_e(self, n, t):
-        num_ones = np.random.randint(0, 2, 1)[0]
+        num_ones = np.random.randint(0, t+1, 1)[0]
 
         e = np.zeros(n)
         e[:num_ones] = np.ones(num_ones)
         return np.random.permutation(e)
+
+
+m = 4
+t = 2
+print(f"m: {m}")
+print(f"t: {t}")
+
+bob = Bob(m, t)
+g_prime, t = bob.send_keys()
+print(f"k: {g_prime.shape[0]}")
+print(f"n: {g_prime.shape[1]}")
+print(f"Public Key size: {g_prime.nbytes} bytes\n\n")
+
+alice = Alice()
+
+y = alice.encrypt(g_prime, t)
+print(f"Alice's message: {alice.unencrypted_m}")
+m_decoded = bob.decrypt(y)
+
+print(f"Bob's decrypted message: {m_decoded}")
+
+message_equals = np.array_equal(m_decoded, alice.unencrypted_m)
+print(f"Bob's decrypted message == Alice's message: {message_equals}")
